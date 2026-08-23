@@ -44,6 +44,15 @@ validate_transform() {
   [[ $1 =~ ^[0-3]$ ]] || { echo "Invalid transform value: $1 (must be 0-3)" >&2; exit 1; }
 }
 
+# Trim a mode string down to the form people write by hand: drop the "Hz"
+# suffix that availableModes carries and any trailing zeros in the refresh
+# rate. "2560x1440@180.00Hz" becomes "2560x1440@180" while "1920x1080@74.97Hz"
+# keeps its precision. The two rules are deliberate: a single s/\.?0+$// would
+# turn "1280x1024@100" into "1280x1024@1".
+normalize_mode() {
+  printf '%s' "${1%Hz}" | sed -E 's/(\.[0-9]*[1-9])0+$/\1/; s/\.0+$//'
+}
+
 # Escape a string for safe embedding in Lua double-quoted strings.
 lua_escape() {
   printf '%s' "$1" | sed 's/[\\"]/\\&/g'
@@ -103,8 +112,20 @@ clean_scale() {
 # ---- monitors.lua persistence ----
 
 persist_to_lua() {
-  local output="$1" mode="$2" pos="$3" scale="$4" transform="$5"
+  local output="$1" mode="$2" pos="$3" scale="$4" transform="$5" keep_mode="${6:-0}"
   [[ -f $MONITORS_LUA ]] || return 0
+
+  # Without --mode the caller only wanted to move or rescale the output, so the
+  # mode recorded in the file is left exactly as the user wrote it. Otherwise a
+  # hand-written "2560x1440@185" would be rewritten as the live refresh rate
+  # hyprctl reports, "2560x1440@184.99800", on every unrelated change.
+  if [[ $keep_mode == 1 ]]; then
+    local existing
+    existing="$(grep -E "^hl\.monitor\(\{ output = \"$output\"" "$MONITORS_LUA" | head -1)"
+    if [[ -n $existing && $existing == *'mode = "'* ]]; then
+      mode="$(sed -E 's/.*mode = "([^"]*)".*/\1/' <<<"$existing")"
+    fi
+  fi
 
   local safe_output safe_mode safe_pos
   safe_output="$(lua_escape "$output")"
@@ -152,10 +173,11 @@ cmd_set() {
   cur_transform="$(echo "$m" | jq -r '.transform')"
 
   local mode="$cur_mode" scale="$cur_scale" pos="$cur_pos" transform="$cur_transform"
+  local mode_given=0
   shift || true
   while (( $# > 0 )); do
     case "$1" in
-      --mode) mode="$2"; shift 2 ;;
+      --mode) mode="$2"; mode_given=1; shift 2 ;;
       --scale) scale="$2"; shift 2 ;;
       --pos|--position) pos="$2"; shift 2 ;;
       --transform) transform="$2"; shift 2 ;;
@@ -165,6 +187,7 @@ cmd_set() {
 
   # Validate all inputs before use.
   validate_mode "$mode"
+  mode="$(normalize_mode "$mode")"
   validate_pos "$pos"
   validate_scale "$scale"
   validate_transform "$transform"
@@ -191,7 +214,7 @@ cmd_set() {
     | .monitors[$out] = { mode: $mode, position: $pos, scale: $scale, transform: $transform }'
 
   # Persist to monitors.lua when the user still keeps Omarchy monitor lines.
-  persist_to_lua "$output" "$mode" "$pos" "$scale" "$transform"
+  persist_to_lua "$output" "$mode" "$pos" "$scale" "$transform" "$(( mode_given ? 0 : 1 ))"
 
   echo "Applied $output: mode=$mode scale=$scale pos=$pos transform=$transform"
 }
