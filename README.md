@@ -15,8 +15,9 @@ terminal control** in a bar widget you open directly from the status bar.
 - All changes apply **live** via Hyprland and **persist** to
   `~/.config/omarchy/displays.json` and `~/.config/hypr/monitors.lua` (so they
   survive a reboot).
-- A matching `omarchy display ...` CLI group and an interactive Display menu
-  submenu (the scripts are installed onto `PATH` automatically).
+- Backend scripts placed on `PATH` (`omarchy-display-monitor`,
+  `omarchy-display-terminal`, `omarchy-display-pick`) for scripting and for
+  wiring into the Omarchy menu.
 
 ## Requirements
 
@@ -34,8 +35,13 @@ omarchy plugin add https://github.com/nightdevil00/better.displays.git --enable
 
 This clones the plugin, validates it, and enables the bar widget. When the
 shell loads the plugin it **auto-installs the backend scripts** onto `PATH`
-(`~/.local/bin`, falling back to `/usr/local/bin`), so the `omarchy display`
-CLI group and the Display menu submenu work immediately. No manual step needed.
+(`~/.local/bin`, falling back to `/usr/local/bin`), so they can be called
+directly or from a menu entry. No manual step needed.
+
+Note that `omarchy display ...` will **not** dispatch to these scripts. The
+Omarchy CLI resolves a group's subcommands by globbing its own installation
+directory, not `PATH`, so commands shipped by a plugin are never discovered
+there. Call the scripts by name instead.
 
 ### Manual
 
@@ -55,14 +61,26 @@ omarchy restart shell
 - Pick a monitor, then adjust Resolution / Scale / Position / Orientation, and
   tune each terminal's font size.
 
-CLI equivalents (interactive shell):
+Equivalents from a shell:
 
 ```bash
-omarchy display monitor list
-omarchy display monitor set DP-1 --mode 2560x1440@144 --scale 1.6 --pos 0x0 --transform 0
-omarchy display terminal list
-omarchy display terminal set ghostty 14
-omarchy display terminal set-all 13
+omarchy-display-monitor list
+omarchy-display-monitor set DP-1 --mode 2560x1440@144 --scale 1.6 --pos 0x0 --transform 0
+omarchy-display-terminal list
+omarchy-display-terminal set ghostty 14
+omarchy-display-terminal set-all 13
+```
+
+To reach the same pickers from the Omarchy menu, add entries to
+`~/.config/omarchy/extensions/omarchy-menu.jsonc`:
+
+```jsonc
+"setup.displays": {"icon":"\udb81\udf79","label":"Displays","when":"command -v omarchy-display-pick >/dev/null"},
+"setup.displays.mode": {"icon":"\udb81\udf79","label":"Resolution","action":"omarchy-display-pick monitor mode"},
+"setup.displays.scale": {"icon":"\udb82\udc78","label":"Scale","action":"omarchy-display-pick monitor scale"},
+"setup.displays.position": {"icon":"\udb82\ude72","label":"Position","action":"omarchy-display-pick monitor position"},
+"setup.displays.transform": {"icon":"\udb80\udd3a","label":"Orientation","action":"omarchy-display-pick monitor transform"},
+"setup.displays.terminal": {"icon":"\udb84\udc98","label":"Terminal font size","action":"omarchy-display-pick terminal"},
 ```
 
 ## Uninstall
@@ -96,7 +114,7 @@ better.displays/
 
 `Panel.qml` invokes the scripts by their absolute path inside `bin/`, so the
 widget works the moment the folder is present — the `install` step only exists
-to expose the `omarchy display` CLI / menu.
+to put the scripts on `PATH` for shell and menu use.
 
 ## Security
 

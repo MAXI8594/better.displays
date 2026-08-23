@@ -10,6 +10,14 @@
 
 set -euo pipefail
 
+# Resolve sibling scripts through this file's own location. `omarchy display
+# ...` cannot be used here: the Omarchy dispatcher only globs the directory it
+# is installed in, so scripts placed on PATH by a plugin are never discovered.
+# readlink -f follows the symlink that install creates in ~/.local/bin back to
+# the plugin's bin directory, so this works for both install paths and for a
+# direct checkout.
+BIN_DIR="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
 MON_ICON=$'\U000f0431'   # 󰀱 display
 SCALE_ICON=$'\U000f0878' # 󰡸
 POS_ICON=$'\U000f0a72'   # 󰩲
@@ -102,7 +110,7 @@ cmd_monitor() {
     *) echo "Unknown monitor picker: $what" >&2; exit 1 ;;
   esac
   [[ -n $val ]] || exit 0
-  omarchy display monitor set "$out" "--$what" "$val"
+  "$BIN_DIR/omarchy-display-monitor" set "$out" "--$what" "$val"
 }
 
 cmd_terminal() {
@@ -124,7 +132,7 @@ cmd_terminal() {
   sz="$(pick "$TERM_ICON Font size for $term" "${sopts[@]}")" || exit 0
   sz="$(echo "$sz" | grep -oP '\d+')"
   [[ -n $sz ]] || exit 0
-  omarchy display terminal set "$term" "$sz"
+  "$BIN_DIR/omarchy-display-terminal" set "$term" "$sz"
 }
 
 case "${1:-}" in
