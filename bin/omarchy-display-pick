@@ -42,7 +42,10 @@ pick_monitor() {
 pick_mode() {
   local out="$1"
   local modes
-  modes="$(hyprctl monitors -j | jq -r --arg o "$out" '.[] | select(.name==$o) | .modes[]? | "\(.width)x\(.height)@\(.refreshRate)"' | sort -u -V)"
+  # Hyprland publishes the mode list as `availableModes`, an array of
+  # "WxH@R.RRHz" strings. Older builds exposed `modes` as objects, so fall back
+  # to that shape rather than silently reporting a monitor with no modes.
+  modes="$(hyprctl monitors -j | jq -r --arg o "$out" '.[] | select(.name==$o) | if (.availableModes | type) == "array" and (.availableModes | length) > 0 then .availableModes[] else (.modes[]? | "\(.width)x\(.height)@\(.refreshRate)") end' | sort -u -V)"
   [[ -n $modes ]] || { echo "No modes reported for $out" >&2; return 1; }
   local sel
   sel="$(pick "$MON_ICON Resolution for $out" $modes)" || return 1

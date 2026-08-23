@@ -81,7 +81,9 @@ monitor_json() {
 
 list_modes() {
   local m="$1"
-  echo "$m" | jq -r '.modes[]? | "\(.width)x\(.height)@\(.refreshRate)"' 2>/dev/null | sort -u -V
+  # See the note in omarchy-display-pick: `availableModes` is the current
+  # field, `modes` the legacy object form.
+  echo "$m" | jq -r 'if (.availableModes | type) == "array" and (.availableModes | length) > 0 then .availableModes[] else (.modes[]? | "\(.width)x\(.height)@\(.refreshRate)") end' 2>/dev/null | sort -u -V
 }
 
 clean_scale() {
