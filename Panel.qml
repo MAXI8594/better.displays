@@ -58,15 +58,31 @@ Panel {
     return best
   }
 
+  // A tick marks the value the selected monitor is running right now, so the
+  // list reads as state rather than as a menu of equally likely choices. Only
+  // the label carries it; `value` stays the exact mode string that gets applied.
+  readonly property string currentTick: "  \u2713"
+
+  function scaleIsCurrent(v) {
+    var m = selectedMonitor()
+    return !!m && Math.abs(Number(m.scale) - Number(v)) < 0.001
+  }
+
+  function transformIsCurrent(v) {
+    var m = selectedMonitor()
+    return !!m && Number(m.transform) === Number(v)
+  }
+
   function modeOptions(m) {
     if (!m || !m.modes) return []
+    var current = currentModeString(m)
     var seen = {}
     var out = []
     for (var i = 0; i < m.modes.length; i++) {
       var s = m.modes[i]
       if (!s || seen[s]) continue
       seen[s] = true
-      out.push({ value: s, label: s })
+      out.push({ value: s, label: s === current ? s + root.currentTick : s })
     }
     return out
   }
@@ -280,7 +296,10 @@ Panel {
             model: root.monitors
             Button {
               required property var modelData
-              text: modelData.name
+              // Each button carries its own monitor's current mode, so the
+              // panel answers "what is each display set to" without having to
+              // click through them one at a time.
+              text: modelData.name + " · " + (modelData.width + "x" + modelData.height)
               foreground: root.bar.foreground
               fontFamily: root.bar.fontFamily
               fontSize: Style.font.caption
@@ -313,15 +332,12 @@ Panel {
               model: root.scalePresets
               Button {
                 required property string modelData
-                text: modelData + "x"
+                text: modelData + "x" + (root.scaleIsCurrent(modelData) ? root.currentTick : "")
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 fontSize: Style.font.caption
                 bordered: true
-                active: {
-                  var m = root.selectedMonitor()
-                  m && Math.abs(Number(m.scale) - Number(modelData)) < 0.001
-                }
+                active: root.scaleIsCurrent(modelData)
                 onClicked: root.setMonitor("--scale", modelData)
               }
             }
@@ -366,14 +382,12 @@ Panel {
               Button {
                 required property string modelData
                 text: ({ "0": "0°", "1": "90°", "2": "180°", "3": "270°" })[modelData]
+                      + (root.transformIsCurrent(modelData) ? root.currentTick : "")
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 fontSize: Style.font.caption
                 bordered: true
-                active: {
-                  var m = root.selectedMonitor()
-                  m && Number(m.transform) === Number(modelData)
-                }
+                active: root.transformIsCurrent(modelData)
                 onClicked: root.setMonitor("--transform", modelData)
               }
             }

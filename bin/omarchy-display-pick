@@ -26,6 +26,31 @@ TERM_ICON=$'\U000f4898'  # 󱢘
 
 pick() { omarchy-menu-select "$@"; }
 
+TICK_CHAR="\u2713"
+TICK=" $TICK_CHAR"
+
+# Current value of one field for an output, straight from Hyprland.
+current_field() {
+  hyprctl monitors -j 2>/dev/null | jq -r --arg o "$1" --arg f "$2" '
+    .[] | select(.name == $o) |
+    if $f == "mode" then "\(.width)x\(.height)@\(.refreshRate)"
+    elif $f == "scale" then (.scale | tostring)
+    else (.transform | tostring) end' 2>/dev/null
+}
+
+# Append a tick to the entry that is already active, so each list shows what
+# the monitor is running instead of a flat set of choices.
+# Drop the tick (and the space before it) from a selection before it is used
+# as a value.
+strip_tick() { printf '%s' "${1%% $(printf '%b' "$TICK_CHAR")*}"; }
+
+mark_current() { # <current> ; entries on stdin
+  local cur="$1" line
+  while IFS= read -r line; do
+    if [[ "$line" == "$cur" ]]; then printf '%s%b\n' "$line" "$TICK"; else printf '%s\n' "$line"; fi
+  done
+}
+
 list_monitors() {
   hyprctl monitors -j 2>/dev/null | jq -r '.[] | "\(.name)\t\(.width)x\(.height)@\(.refreshRate) scale \(.scale)"' 2>/dev/null
 }
@@ -47,25 +72,50 @@ pick_mode() {
   # to that shape rather than silently reporting a monitor with no modes.
   modes="$(hyprctl monitors -j | jq -r --arg o "$out" '.[] | select(.name==$o) | if (.availableModes | type) == "array" and (.availableModes | length) > 0 then .availableModes[] else (.modes[]? | "\(.width)x\(.height)@\(.refreshRate)") end' | sort -u -V)"
   [[ -n $modes ]] || { echo "No modes reported for $out" >&2; return 1; }
+  # hyprctl reports the live rate at full precision ("184.99800") while the
+  # mode list is rounded ("185.00Hz"), so match on the dimensions plus the
+  # rate truncated to the list's two decimals.
+  local cur cur_norm
+  cur="$(current_field "$out" mode)"
+  cur_norm="$(awk -F'@' '{printf "%s@%.2fHz", $1, $2}' <<<"$cur" 2>/dev/null || true)"
+  # An entry now contains a space before the tick, so the list must travel as
+  # an array; word-splitting an unquoted string would tear "1440@185Hz ✓" into
+  # two menu rows.
+  local -a marked
+  mapfile -t marked < <(mark_current "$cur_norm" <<<"$modes")
   local sel
-  sel="$(pick "$MON_ICON Resolution for $out" $modes)" || return 1
-  echo "$sel" | cut -f1
+  sel="$(pick "$MON_ICON Resolution for $out" "${marked[@]}")" || return 1
+  strip_tick "$(cut -f1 <<<"$sel")"
 }
 
 pick_scale() {
-  local presets="1" "1.25" "1.6" "2" "3" "4"
+  local out="${1:-}"
+  # The parentheses matter: `local presets="1" "1.25" ...` declares presets=1
+  # and then tries to declare locals named "1.25" and "1.6", which are not
+  # valid identifiers, so bash errors and only scale 1 was ever offered.
+  local presets=("1" "1.25" "1.6" "2" "3" "4")
+  local cur
+  cur="$(current_field "$out" scale)"
+  local -a marked
+  mapfile -t marked < <(printf '%s\n' "${presets[@]}" | mark_current "$cur")
   local sel
-  sel="$(pick "$SCALE_ICON Scale" "${presets[@]}")" || return 1
-  echo "$sel" | cut -f1
+  sel="$(pick "$SCALE_ICON Scale" "${marked[@]}")" || return 1
+  strip_tick "$(cut -f1 <<<"$sel")"
 }
 
 pick_transform() {
-  local opts=(
-    "$TF_ICON Normal\t0"
-    "$TF_ICON Rotate right (90°)\t1"
-    "$TF_ICON Rotate 180°\t2"
-    "$TF_ICON Rotate left (270°)\t3"
-  )
+  local out="${1:-}"
+  local cur
+  cur="$(current_field "$out" transform)"
+  local labels=("Normal" "Rotate right (90°)" "Rotate 180°" "Rotate left (270°)")
+  local opts=() i
+  for i in 0 1 2 3; do
+    if [[ "$i" == "$cur" ]]; then
+      opts+=("$TF_ICON ${labels[$i]}$(printf '%b' "$TICK")\t$i")
+    else
+      opts+=("$TF_ICON ${labels[$i]}\t$i")
+    fi
+  done
   local sel
   sel="$(pick "$TF_ICON Orientation" "${opts[@]}")" || return 1
   echo "$sel" | cut -f2
@@ -107,9 +157,9 @@ cmd_monitor() {
   local val
   case "$what" in
     mode)     val="$(pick_mode "$out")" || exit 0 ;;
-    scale)    val="$(pick_scale)" || exit 0 ;;
+    scale)    val="$(pick_scale "$out")" || exit 0 ;;
     position) val="$(pick_position "$out")" || exit 0 ;;
-    transform) val="$(pick_transform)" || exit 0 ;;
+    transform) val="$(pick_transform "$out")" || exit 0 ;;
     *) echo "Unknown monitor picker: $what" >&2; exit 1 ;;
   esac
   [[ -n $val ]] || exit 0
