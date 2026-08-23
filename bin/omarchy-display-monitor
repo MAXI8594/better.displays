@@ -131,7 +131,16 @@ persist_to_lua() {
   safe_output="$(lua_escape "$output")"
   safe_mode="$(lua_escape "$mode")"
   safe_pos="$(lua_escape "$pos")"
-  local line="hl.monitor({ output = \"$safe_output\", mode = \"$safe_mode\", position = \"$safe_pos\", scale = $scale, transform = $transform })"
+  # transform is omitted when it is 0. Hyprland already defaults to it, the
+  # whole line is replaced on every write so its absence still means "not
+  # rotated", and leaving it out keeps a hand-written config from growing a
+  # field the user never set.
+  local line
+  if [[ $transform == 0 ]]; then
+    line="hl.monitor({ output = \"$safe_output\", mode = \"$safe_mode\", position = \"$safe_pos\", scale = $scale })"
+  else
+    line="hl.monitor({ output = \"$safe_output\", mode = \"$safe_mode\", position = \"$safe_pos\", scale = $scale, transform = $transform })"
+  fi
   # Replace an existing hl.monitor line for this exact output, else append.
   if grep -Eq "^hl\.monitor\(\{ output = \"$safe_output\"" "$MONITORS_LUA"; then
     local tmp
